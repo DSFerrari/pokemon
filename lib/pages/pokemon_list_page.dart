@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart';
+import 'package:pokemao/models/navigable_pokemon.dart';
 import '../models/pokemon_list_response.dart';
 import '../services/pokemon_api.dart';
 import 'pokemon_detail_page.dart';
@@ -12,13 +14,51 @@ class PokemonListPage extends StatefulWidget {
 }
 
 class _PokemonListPageState extends State<PokemonListPage> {
-  late Future<PokemonListApiResponse> _futureList;
+  final List<NavigablePokemon> _pokemons = [];
+  final ScrollController _scrollController = ScrollController();
+  
+  bool _isLoading = false;
+  bool _hasMore =true;
+  int _limit = 20;
+  int _offset = 0;
   final _api = PokemonApi();
+
 
   @override
   void initState() {
-    super.initState();
-    _futureList = _api.fetchPokemonList();
+      super.initState();
+    
+    _loadPokemons();
+    _scrollController.addListener((){
+      if(_scrollController.position.pixels >= _scrollController.position.maxScrollExtent * 0.8 && !_isLoading && _hasMore){
+        _loadPokemons();
+      }
+    });
+  
+  }
+
+  Future<void> _loadPokemons() async {
+    setState(() => _isLoading = true);
+  
+  try{
+    final response = await _api.fetchPokemonList(
+      limit: _limit,
+      offset: _offset,
+    );
+
+    setState(() {
+      _offset += _limit;
+      _pokemons.addAll(response.results);
+      _hasMore = response.next != null;
+    });
+  } catch (e) {
+    debugPrint('Erro ao carregar pokemons');
+  }finally{
+    setState(() {
+      _isLoading = false;
+
+    });
+  }
   }
 
   @override
@@ -28,16 +68,13 @@ class _PokemonListPageState extends State<PokemonListPage> {
         title: Text(widget.title),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: FutureBuilder<PokemonListApiResponse>(
-        future: _futureList,
-        builder: (context, snapshot) {
-          if (snapshot.hasData) {
-            final pokemons = snapshot.data!.results;
-            return ListView.builder(
-              itemCount: pokemons.length,
-              itemBuilder: (context, i) {
-                final pokemon = pokemons[i];
-                return ListTile(
+      body: ListView.builder(
+        controller: _scrollController,
+        itemCount: _pokemons.length + (_hasMore ? 1 : 0),
+        itemBuilder: (context, index){
+          if(index < _pokemons.length){
+            final pokemon = _pokemons[index];
+          return  ListTile(
                   title: Text(
                     pokemon.name,
                     style: const TextStyle(
@@ -69,12 +106,9 @@ class _PokemonListPageState extends State<PokemonListPage> {
                     ),
                   ),
                 );
-              },
-            );
-          } else if (snapshot.hasError) {
-            return Center(child: Text('${snapshot.error}'));
+          }else{
+            return const Center(child: CircularProgressIndicator());
           }
-          return const Center(child: CircularProgressIndicator());
         },
       ),
     );
